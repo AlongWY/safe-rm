@@ -1,7 +1,7 @@
 # safe-rm (Safe Rm)
 
 [![safe-rm](https://img.shields.io/crates/v/safe-rm.svg)](https://crates.io/crates/safe-rm)
-[![travis-ci](https://travis-ci.org/alongwy/safe-rm.svg?branch=master)](https://travis-ci.org/alongwy/safe-rm)
+[![travis-ci](https://travis-ci.com/alongwy/safe-rm.svg?branch=master)](https://travis-ci.com/alongwy/safe-rm)
 
 `safe-rm` is a command-line deletion tool focused on safety, ergonomics, and performance.  It favors a simple interface, and does /not/ implement the xdg-trash spec or attempt to achieve the same goals.
 

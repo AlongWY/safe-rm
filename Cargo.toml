@@ -1,22 +1,25 @@
 [package]
-edition = '2018'
-name = "rm-improved"
-version = "0.12.0"
-authors = ["mail@nivekuil.com"]
-description = "rip: a safe and ergonomic alternative to rm"
-repository = "https://github.com/nivekuil/rip"
-readme = "README.org"
+authors = ["alongwyforever@gmail.com","mail@nivekuil.com"]
+categories = ["command-line-utilities"]
+description = "safe-rm: a safe and ergonomic alternative to rm"
+keywords = ["rm"]
 license = "GPL-3.0+"
+name = "safe-rm"
+readme = "./README.md"
+repository = "https://github.com/alongwy/safe-rm"
+
+edition = '2018'
+version = "0.1.0"
 include = [
     "**/*.rs",
     "Cargo.toml",
 ]
-categories = ["command-line-utilities"]
+
 autobins = false
 
 [dependencies]
 clap = "2"
-walkdir = "1"
+walkdir = "2"
 time = "0.1"
 error-chain = "0.12"
 
@@ -24,5 +27,5 @@ error-chain = "0.12"
 opt-level = "s"
 
 [[bin]]
-name = "rip"
+name = "safe-rm"
 path = "src/main.rs"

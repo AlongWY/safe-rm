@@ -1,55 +1,111 @@
 language: rust
 cache: cargo
+sudo: required
 
 env:
   global:
-    - PROJECT_NAME=rip
+    # Default target on travis-ci.
+    # Used as conditional check in the install stage
+    - HOST=x86_64-unknown-linux-gnu
+    # Used on the deployment script
+    - PROJECT_NAME=safe-rm
 
 matrix:
+  allow_failures:
   include:
+    # Stable channel.
+    - os: linux
+      rust: stable
+      env: TARGET=x86_64-unknown-linux-gnu
+    - os: linux
+      rust: stable
+      env: TARGET=i686-unknown-linux-gnu
+    - os: linux
+      rust: stable
+      env: TARGET=x86_64-unknown-linux-musl
+    - os: linux
+      rust: stable
+      env: TARGET=i686-unknown-linux-musl
+    - os: osx
+      rust: stable
+      env: TARGET=x86_64-apple-darwin
+    - os: linux
+      rust: stable
+      env:
+        - TARGET=arm-unknown-linux-gnueabihf
+        - CARGO_TARGET_ARM_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc-4.8
+
+    # Beta channel.
+    # The other platforms are disabled in order to reduce the total CI time
+    - os: linux
+      rust: beta
+      env: TARGET=x86_64-unknown-linux-gnu
+
+    # Nightly channel.
+    # The other platforms are disabled in order to reduce the total CI time
     - os: linux
       rust: nightly
       env: TARGET=x86_64-unknown-linux-gnu
-      dist: trusty
-      sudo: required
-    - os: osx
-      rust: nightly
-      env: TARGET=x86_64-apple-darwin
-      sudo: required
+
+    # Minimum Rust supported channel.
     - os: linux
-      rust: nightly
-      env: TARGET=armv7-unknown-linux-gnueabihf
-      sudo: required
-      addons:
-        apt:
-          packages:
-            # Cross compiler and cross compiled C libraries
-            - gcc-arm-linux-gnueabihf
-            - libc6-armhf-cross
-            - libc6-dev-armhf-cross
-            # Transparent emulation
-            - qemu-user-static
-            - binfmt-support
+      rust: 1.33.0
+      env: TARGET=x86_64-unknown-linux-gnu
+    - os: linux
+      rust: 1.33.0
+      env: TARGET=i686-unknown-linux-gnu
+    - os: osx
+      rust: 1.33.0
+      env: TARGET=x86_64-apple-darwin
+    - os: linux
+      rust: 1.33.0
+      env:
+        - TARGET=arm-unknown-linux-gnueabihf
+        - CARGO_TARGET_ARM_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc-4.8
+
+    # Code formatting check
+    - os: linux
+      rust: stable
+      # skip the global install step
+      install:
+        - rustup component add clippy
+      script:
+        - cargo clippy --all-features
 
 before_install:
-  - export PATH="$PATH:$HOME/.cargo/bin"
+  - bash ci/before_install.bash
 
-install: bash ci/install.sh
+install:
+  # prevent target re-add error from rustup
+  - if [[ $TRAVIS_OS_NAME = linux && $HOST != $TARGET ]]; then rustup target add $TARGET; fi
 
-script: bash ci/script.sh
+script:
+  - bash ci/script.bash
 
-before_deploy: bash ci/before_deploy.sh
+before_deploy:
+  - bash ci/before_deploy.bash
 
 deploy:
   provider: releases
-  api_key:
-    secure: "RZj8Xu8ytLCWaFPm2xgodd27d8pGRhZM9EN8u3iGxFNWejnN7HZgaZvxlRgxa58nVqeEXIeQtMVclVmB9MT1Mgll5+L4VfMsnapAgYtHPp7RpRyNlrrlUl4pdLKgwsSiwfqMJAvkCNvpUPVWmM75d70P/d/8p8LYCTgaIm7LBjzIlzRYvxQzGTZ2rufdRyqIyVKCD3R780n/xpeGq8NLXcNj3jZSwqjWeguVU598hfO/ZxwbURnLHjOyXeRIRs380oeHTiuYOzLmPbk31XMT3isthkYDUyBbEES0ruWX2m/114gyt4xtR6OP/JruR1e5bHdCL+kzECZJGKXvPUMAOP35HlxWzuDwZCpthBoBQl6VBc4sCkbj/tV1DhuVrwuoLZT7wYbOC8C06txq1+1TeOB6QFqfLsedIN2/KmUOH2w73l/kwOjMIEDAX3zdy5AFQxefrz6v6bqIAFmNl7Z2eFxT0GNM0yCx96R6yv2YLhZyFe7N/VuTDTGWBMe6CD8OVPez6DTd78kgbMBnXRgWfvMaNMI7Tj3FcvrjG2wHzQtz67HahcB667SLlNvB0Zo0AcI9/YqwhwF2kA/3Tz5084/lrusbyzYDDw57y4LE8J1gbzCC4bKp/21PIv0lIoLj1v3oh14DmfkpWCOo8WISien508I0zMUmiT/FK14ftSQ="
+  api_key: $GH_TOKEN
+  # for uploading multiple files
   file_glob: true
-  file: ${PROJECT_NAME}-${TRAVIS_TAG}-${TARGET}.*
+  # NOTE explanation on each env variable
+  # - PROJECT_NAME: name of the project, set on the `env.global` above
+  # - TRAVIS_TAG: tag name that the build is being deployed for, usually the version number
+  # - TARGET: target triple of the build
+  file:
+    - $PROJECT_NAME-$TRAVIS_TAG-$TARGET.*
+    - $PROJECT_NAME*.deb
+  # don't delete artifacts from previous stage
   skip_cleanup: true
   on:
-    condition: $TRAVIS_RUST_VERSION = nightly
+    # deploy only if we push a tag
     tags: true
+    # deploy only on stable channel that has TARGET env variable sets
+    condition: $TRAVIS_RUST_VERSION = stable && $TARGET != ""
+
 
 notifications:
-  email: false
+  email:
+    on_success: never

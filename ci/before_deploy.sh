@@ -1,67 +1,118 @@
-# `before_deploy` phase: here we package the build artifacts
+#!/usr/bin/env bash
+# Building and packaging for release
 
 set -ex
 
-. $(dirname $0)/utils.sh
-
-# Generate artifacts for release
-mk_artifacts() {
-    cargo build --target $TARGET --release
+build() {
+    cargo build --target "$TARGET" --release --verbose
 }
 
-mk_tarball() {
+pack() {
+    local tempdir
+    local out_dir
+    local package_name
+    local gcc_prefix
+
+    tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t tmp)
+    out_dir=$(pwd)
+    package_name="$PROJECT_NAME-$TRAVIS_TAG-$TARGET"
+
+    if [[ $TARGET == arm-unknown-linux-* ]]; then
+        gcc_prefix="arm-linux-gnueabihf-"
+    else
+        gcc_prefix=""
+    fi
+
     # create a "staging" directory
-    local td=$(mktempd)
-    local out_dir=$(pwd)
+    mkdir "$tempdir/$package_name"
+    mkdir "$tempdir/$package_name/autocomplete"
 
-    # TODO update this part to copy the artifacts that make sense for your project
-    # NOTE All Cargo build artifacts will be under the 'target/$TARGET/{debug,release}'
-    cp target/$TARGET/release/rip $td
+    # copying the main binary
+    cp "target/$TARGET/release/$PROJECT_NAME" "$tempdir/$package_name/"
+    "${gcc_prefix}"strip "$tempdir/$package_name/$PROJECT_NAME"
 
-    pushd $td
+    # manpage, readme and license
+    cp README.md "$tempdir/$package_name"
+    cp LICENSE "$tempdir/$package_name"
 
-    # release tarball will look like 'rust-everywhere-v1.2.3-x86_64-unknown-linux-gnu.tar.gz'
-    tar czf $out_dir/${PROJECT_NAME}-${TRAVIS_TAG}-${TARGET}.tar.gz *
+    # various autocomplete
+    cp target/"$TARGET"/release/build/"$PROJECT_NAME"-*/out/"$PROJECT_NAME".bash "$tempdir/$package_name/autocomplete/${PROJECT_NAME}.bash-completion"
+    cp target/"$TARGET"/release/build/"$PROJECT_NAME"-*/out/"$PROJECT_NAME".fish "$tempdir/$package_name/autocomplete"
+    cp target/"$TARGET"/release/build/"$PROJECT_NAME"-*/out/_"$PROJECT_NAME" "$tempdir/$package_name/autocomplete"
 
+    # archiving
+    pushd "$tempdir"
+    tar czf "$out_dir/$package_name.tar.gz" "$package_name"/*
     popd
-    rm -r $td
+    rm -r "$tempdir"
 }
 
-# Package your artifacts in a .deb file
-# NOTE right now you can only package binaries using the `dobin` command. Simply call
-# `dobin [file..]` to include one or more binaries in your .deb package. I'll add more commands to
-# install other things like manpages (`doman`) as the needs arise.
-# XXX This .deb packaging is minimal -- just to make your app installable via `dpkg` -- and doesn't
-# fully conform to Debian packaging guideliens (`lintian` raises a few warnings/errors)
-mk_deb() {
-    # TODO update this part to package the artifacts that make sense for your project
-    dobin target/$TARGET/release/hello
-}
+make_deb() {
+    local tempdir
+    local architecture
+    local version
+    local dpkgname
+    local conflictname
 
-main() {
-    mk_artifacts
-    mk_tarball
+    case $TARGET in
+        x86_64*)
+            architecture=amd64
+            ;;
+        i686*)
+            architecture=i386
+            ;;
+        *)
+            echo "make_deb: skipping target '${TARGET}'" >&2
+            return 0
+            ;;
+    esac
+    version=${TRAVIS_TAG#v}
+    if [[ $TARGET = *musl* ]]; then
+      dpkgname=$PROJECT_NAME-musl
+      conflictname=$PROJECT_NAME
+    else
+      dpkgname=$PROJECT_NAME
+      conflictname=$PROJECT_NAME-musl
+    fi
 
-    if [ $TRAVIS_OS_NAME = linux ]; then
-        if [ ! -z $MAKE_DEB ]; then
-            dtd=$(mktempd)
-            mkdir -p $dtd/debian/usr/bin
+    tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t tmp)
 
-            mk_deb
+    # copy the main binary
+    install -Dm755 "target/$TARGET/release/$PROJECT_NAME" "$tempdir/usr/bin/$PROJECT_NAME"
+    strip "$tempdir/usr/bin/$PROJECT_NAME"
 
-            mkdir -p $dtd/debian/DEBIAN
-            cat >$dtd/debian/DEBIAN/control <<EOF
-Package: $PROJECT_NAME
-Version: ${TRAVIS_TAG#v}
-Architecture: $(architecture $TARGET)
-Maintainer: $DEB_MAINTAINER
-Description: $DEB_DESCRIPTION
+    # readme and license
+    install -Dm644 README.md "$tempdir/usr/share/doc/$PROJECT_NAME/README.md"
+    install -Dm644 LICENSE "$tempdir/usr/share/doc/$PROJECT_NAME/LICENSE"
+
+    # completions
+    install -Dm644 target/$TARGET/release/build/$PROJECT_NAME-*/out/$PROJECT_NAME.bash "$tempdir/usr/share/bash-completion/completions/${PROJECT_NAME}"
+    install -Dm644 target/$TARGET/release/build/$PROJECT_NAME-*/out/$PROJECT_NAME.fish "$tempdir/usr/share/fish/completions/$PROJECT_NAME.fish"
+    install -Dm644 target/$TARGET/release/build/$PROJECT_NAME-*/out/_$PROJECT_NAME "$tempdir/usr/share/zsh/vendor-completions/_$PROJECT_NAME"
+
+    # Control file
+    mkdir "$tempdir/DEBIAN"
+    cat > "$tempdir/DEBIAN/control" <<EOF
+Package: $dpkgname
+Version: $version
+Section: utils
+Priority: optional
+Maintainer: Feng Yunlong <alongwyforever@gmail.com>
+Architecture: $architecture
+Provides: $PROJECT_NAME
+Conflicts: $conflictname
+Description: A safe and ergonomic alternative to rm.
 EOF
 
-            fakeroot dpkg-deb --build $dtd/debian
-            mv $dtd/debian.deb $PROJECT_NAME-$TRAVIS_TAG-$TARGET.deb
-            rm -r $dtd
-        fi
+    fakeroot dpkg-deb --build "$tempdir" "${dpkgname}_${version}_${architecture}.deb"
+}
+
+
+main() {
+    build
+    pack
+    if [[ $TARGET = *linux* ]]; then
+      make_deb
     fi
 }
 

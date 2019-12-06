@@ -14,14 +14,21 @@ use std::path::{Path, PathBuf};
 use std::io::{Read, Write, BufRead, BufReader};
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::borrow::Cow;
+
 mod errors {
-    error_chain!{}
+    error_chain! {}
 }
+
 use errors::*;
 
 include!("util.rs");
 
+#[cfg(target_os = "macos")]
+const GRAVEYARD: &'static str = "~/.Trash";
+
+#[cfg(target_os = "linux")]
 const GRAVEYARD: &'static str = "/tmp/graveyard";
+
 const RECORD: &'static str = ".record";
 const LINES_TO_INSPECT: usize = 6;
 const FILES_TO_INSPECT: usize = 6;
@@ -53,7 +60,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let matches = App::new("rip")
+    let matches = App::new("safe-rm")
         .version(crate_version!())
         .author(crate_authors!())
         .about("Rm ImProved
@@ -65,6 +72,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
         .arg(Arg::with_name("graveyard")
             .help("Directory where deleted files go to rest")
             .long("graveyard")
+            .short("g")
             .takes_value(true))
         .arg(Arg::with_name("decompose")
             .help("Permanently deletes (unlink) the entire graveyard")
@@ -87,7 +95,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
             .long("inspect"))
         .get_matches();
 
-    let _graveyard_opts = { 
+    let _graveyard_opts = {
         (matches.value_of("graveyard"),
          env::var("GRAVEYARD"),
          env::var("XDG_DATA_HOME"))
@@ -101,7 +109,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
             }
             env.push_str("graveyard");
             env.into()
-        },
+        }
         _ => format!("{}-{}", GRAVEYARD, get_user()).into(),
     };
     let graveyard = Path::new(&*_graveyard);
@@ -155,10 +163,10 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
                 }
             };
             bury(entry.dest, orig).chain_err(|| {
-                    format!("Unbury failed: couldn't copy files from {} to {}",
-                            entry.dest.display(),
-                            orig.display())
-                })?;
+                format!("Unbury failed: couldn't copy files from {} to {}",
+                        entry.dest.display(),
+                        orig.display())
+            })?;
             println!("Returned {} to {}", entry.dest.display(), orig.display());
         }
 
@@ -230,7 +238,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
                     }
                 }
 
-                // If rip is called on a file already in the graveyard, prompt
+                // If safe-rm is called on a file already in the graveyard, prompt
                 // to permanently delete it instead.
                 if source.starts_with(graveyard) {
                     println!("{} is already in the graveyard.", source.display());
@@ -256,9 +264,9 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
                 };
 
                 bury(source, dest).or_else(|e| {
-                        fs::remove_dir_all(dest).is_ok();
-                        Err(e)
-                    })
+                    fs::remove_dir_all(dest).is_ok();
+                    Err(e)
+                })
                     .chain_err(|| "Failed to bury file")?;
                 // Clean up any partial buries due to permission error
                 write_log(source, dest, record)
@@ -268,7 +276,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
             }
         }
     } else {
-        println!("{}\nrip -h for help", matches.usage());
+        println!("{}\nsafe-rm -h for help", matches.usage());
     }
 
     Ok(())
@@ -314,26 +322,26 @@ fn bury<S: AsRef<Path>, D: AsRef<Path>>(source: S, dest: D) -> Result<()> {
                 .chain_err(|| "Parent directory isn't a prefix of child directories?")?;
             if entry.file_type().is_dir() {
                 fs::create_dir_all(dest.join(orphan)).chain_err(|| {
-                        format!("Failed to create {} in {}",
-                                entry.path().display(),
-                                dest.join(orphan).display())
-                    })?;
+                    format!("Failed to create {} in {}",
+                            entry.path().display(),
+                            dest.join(orphan).display())
+                })?;
             } else {
                 copy_file(entry.path(), dest.join(orphan)).chain_err(|| {
-                        format!("Failed to copy file from {} to {}",
-                                entry.path().display(),
-                                dest.join(orphan).display())
-                    })?;
+                    format!("Failed to copy file from {} to {}",
+                            entry.path().display(),
+                            dest.join(orphan).display())
+                })?;
             }
         }
         fs::remove_dir_all(source)
             .chain_err(|| format!("Failed to remove dir: {}", source.display()))?;
     } else {
         copy_file(source, dest).chain_err(|| {
-                format!("Failed to copy file from {} to {}",
-                        source.display(),
-                        dest.display())
-            })?;
+            format!("Failed to copy file from {} to {}",
+                    source.display(),
+                    dest.display())
+        })?;
         fs::remove_file(source)
             .chain_err(|| format!("Failed to remove file: {}", source.display()))?;
     }
@@ -428,7 +436,7 @@ fn record_entry(line: &str) -> RecordItem {
 }
 
 /// Takes a vector of grave paths and returns the respective lines in the record
-fn lines_of_graves<'a>(f: fs::File, graves: &'a [PathBuf]) -> impl Iterator<Item = String> + 'a {
+fn lines_of_graves<'a>(f: fs::File, graves: &'a [PathBuf]) -> impl Iterator<Item=String> + 'a {
     BufReader::new(f)
         .lines()
         .filter_map(|l| l.ok())
@@ -436,7 +444,7 @@ fn lines_of_graves<'a>(f: fs::File, graves: &'a [PathBuf]) -> impl Iterator<Item
 }
 
 /// Returns an iterator over all graves in the record that are under gravepath
-fn seance<T: AsRef<str>>(f: fs::File, gravepath: T) -> impl Iterator<Item = PathBuf> {
+fn seance<T: AsRef<str>>(f: fs::File, gravepath: T) -> impl Iterator<Item=PathBuf> {
     BufReader::new(f)
         .lines()
         .filter_map(|l| l.ok())

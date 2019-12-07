@@ -1,5 +1,6 @@
 [package]
 authors = ["alongwyforever@gmail.com","mail@nivekuil.com"]
+build = "build.rs"
 categories = ["command-line-utilities"]
 description = "safe-rm: a safe and ergonomic alternative to rm"
 keywords = ["rm"]
@@ -7,25 +8,25 @@ license = "GPL-3.0+"
 name = "safe-rm"
 readme = "./README.md"
 repository = "https://github.com/alongwy/safe-rm"
-
 edition = '2018'
 version = "0.1.0"
-include = [
-    "**/*.rs",
-    "Cargo.toml",
-]
-
-autobins = false
-
-[dependencies]
-clap = "2"
-walkdir = "2"
-time = "0.1"
-error-chain = "0.12"
-
-[profile.release]
-opt-level = "s"
 
 [[bin]]
 name = "safe-rm"
 path = "src/main.rs"
+
+[build-dependencies]
+clap = "2"
+version_check = "0.9.*"
+
+[dependencies]
+walkdir = "2"
+time = "0.1"
+error-chain = "0.12"
+
+[dependencies.clap]
+features = ["suggestions", "color", "wrap_help"]
+version = "2"
+
+[profile.release]
+opt-level = "s"

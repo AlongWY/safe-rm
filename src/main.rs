@@ -7,7 +7,6 @@ extern crate error_chain;
 extern crate time;
 extern crate walkdir;
 
-use clap::{Arg, App};
 use walkdir::WalkDir;
 use std::{env, fs, io};
 use std::path::{Path, PathBuf};
@@ -21,7 +20,8 @@ mod errors {
 
 use errors::*;
 
-include!("util.rs");
+mod app;
+mod util;
 
 #[cfg(target_os = "macos")]
 const GRAVEYARD: &'static str = "~/.Trash";
@@ -60,40 +60,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let matches = App::new("safe-rm")
-        .version(crate_version!())
-        .author(crate_authors!())
-        .about("Rm ImProved
-Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinking them.")
-        .arg(Arg::with_name("TARGET")
-            .help("File or directory to remove")
-            .multiple(true)
-            .index(1))
-        .arg(Arg::with_name("graveyard")
-            .help("Directory where deleted files go to rest")
-            .long("graveyard")
-            .short("g")
-            .takes_value(true))
-        .arg(Arg::with_name("decompose")
-            .help("Permanently deletes (unlink) the entire graveyard")
-            .short("d")
-            .long("decompose"))
-        .arg(Arg::with_name("seance")
-            .help("Prints files that were sent under the current directory")
-            .short("s")
-            .long("seance"))
-        .arg(Arg::with_name("unbury")
-            .help("Undo the last removal by the current user, or specify some file(s) in the \
-                   graveyard.  Combine with -s to restore everything printed by -s.")
-            .short("u")
-            .long("unbury")
-            .value_name("target")
-            .min_values(0))
-        .arg(Arg::with_name("inspect")
-            .help("Prints some info about TARGET before prompting for action")
-            .short("i")
-            .long("inspect"))
-        .get_matches();
+    let matches = app::build().get_matches();
 
     let _graveyard_opts = {
         (matches.value_of("graveyard"),
@@ -110,12 +77,12 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
             env.push_str("graveyard");
             env.into()
         }
-        _ => format!("{}-{}", GRAVEYARD, get_user()).into(),
+        _ => format!("{}-{}", GRAVEYARD, util::get_user()).into(),
     };
     let graveyard = Path::new(&*_graveyard);
 
     if matches.is_present("decompose") {
-        if prompt_yes("Really unlink the entire graveyard?") {
+        if util::prompt_yes("Really unlink the entire graveyard?") {
             fs::remove_dir_all(graveyard).chain_err(|| "Couldn't unlink graveyard")?;
         }
         return Ok(());
@@ -135,7 +102,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
         // the graves_to_exhume.
         if matches.is_present("seance") {
             if let Ok(f) = fs::File::open(record) {
-                let gravepath = join_absolute(graveyard, cwd)
+                let gravepath = util::join_absolute(graveyard, cwd)
                     .to_string_lossy()
                     .into_owned();
                 for grave in seance(f, gravepath) {
@@ -156,8 +123,8 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
         for line in lines_of_graves(f, graves_to_exhume) {
             let entry: RecordItem = record_entry(&line);
             let orig: &Path = &{
-                if symlink_exists(entry.orig) {
-                    rename_grave(entry.orig)
+                if util::symlink_exists(entry.orig) {
+                    util::rename_grave(entry.orig)
                 } else {
                     PathBuf::from(entry.orig)
                 }
@@ -179,7 +146,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
     }
 
     if matches.is_present("seance") {
-        let gravepath = join_absolute(graveyard, cwd);
+        let gravepath = util::join_absolute(graveyard, cwd);
         let f = fs::File::open(record).chain_err(|| "Failed to read record")?;
         for grave in seance(f, gravepath.to_string_lossy()) {
             println!("{}", grave.display());
@@ -203,7 +170,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
                         // Get the size of the directory and all its contents
                         println!("{}: directory, {} including:",
                                  target,
-                                 humanize_bytes(WalkDir::new(source)
+                                 util::humanize_bytes(WalkDir::new(source)
                                      .into_iter()
                                      .filter_map(|x| x.ok())
                                      .filter_map(|x| x.metadata().ok())
@@ -220,7 +187,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
                             println!("{}", entry.path().display());
                         }
                     } else {
-                        println!("{}: file, {}", target, humanize_bytes(metadata.len()));
+                        println!("{}: file, {}", target, util::humanize_bytes(metadata.len()));
                         // Read the file and print the first few lines
                         if let Ok(f) = fs::File::open(source) {
                             for line in BufReader::new(f)
@@ -233,7 +200,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
                             println!("Error reading {}", source.display());
                         }
                     }
-                    if !prompt_yes(format!("Send {} to the graveyard?", target)) {
+                    if !util::prompt_yes(format!("Send {} to the graveyard?", target)) {
                         continue;
                     }
                 }
@@ -242,7 +209,7 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
                 // to permanently delete it instead.
                 if source.starts_with(graveyard) {
                     println!("{} is already in the graveyard.", source.display());
-                    if prompt_yes("Permanently unlink it?") {
+                    if util::prompt_yes("Permanently unlink it?") {
                         if fs::remove_dir_all(source).is_err() {
                             fs::remove_file(source).chain_err(|| "Couldn't unlink")?;
                         }
@@ -254,10 +221,10 @@ Send files to the graveyard (/tmp/graveyard-$USER by default) instead of unlinki
                 }
 
                 let dest: &Path = &{
-                    let dest = join_absolute(graveyard, source);
+                    let dest = util::join_absolute(graveyard, source);
                     // Resolve a name conflict if necessary
-                    if symlink_exists(&dest) {
-                        rename_grave(dest)
+                    if util::symlink_exists(&dest) {
+                        util::rename_grave(dest)
                     } else {
                         dest
                     }
@@ -357,8 +324,8 @@ fn copy_file<S: AsRef<Path>, D: AsRef<Path>>(source: S, dest: D) -> io::Result<(
     if metadata.len() > BIG_FILE_THRESHOLD {
         println!("About to copy a big file ({} is {})",
                  source.display(),
-                 humanize_bytes(metadata.len()));
-        if prompt_yes("Permanently delete this file instead?") {
+                 util::humanize_bytes(metadata.len()));
+        if util::prompt_yes("Permanently delete this file instead?") {
             return Ok(());
         }
     }
@@ -380,7 +347,7 @@ fn copy_file<S: AsRef<Path>, D: AsRef<Path>>(source: S, dest: D) -> io::Result<(
     } else if let Err(e) = fs::copy(source, dest) {
         // Special file: Try copying it as normal, but this probably won't work
         println!("Non-regular file or directory: {}", source.display());
-        if !prompt_yes("Permanently delete the file?") {
+        if !util::prompt_yes("Permanently delete the file?") {
             return Err(e);
         }
         // Create a dummy file to act as a marker in the graveyard
@@ -405,7 +372,7 @@ fn get_last_bury<R: AsRef<Path>>(record: R) -> io::Result<PathBuf> {
     for entry in contents.lines().rev().map(record_entry) {
         // Check that the file is still in the graveyard.
         // If it is, return the corresponding line.
-        if symlink_exists(entry.dest) {
+        if util::symlink_exists(entry.dest) {
             if !graves_to_exhume.is_empty() {
                 delete_lines_from_record(f, record, graves_to_exhume)?;
             }

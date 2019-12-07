@@ -94,6 +94,11 @@ Returned /tmp/graveyard-jack/home/jack/file1~1 to /home/jack/file1~1
 - In general, a deletion followed by a `--unbury` should be idempotent.
 - The deletion log is kept in `.record`, found in the top level of the graveyard.
 
+## ⚰ Todo List
+
+- [ ] Add auto suggestions generate
+- [ ] Add protect files config
+
 ## ⚰ Credits
 Special thanks to:
 + [nivekuil](https://github.com/nivekuil/rip) for his source code.

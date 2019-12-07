@@ -22,11 +22,14 @@ version_check = "0.9.*"
 [dependencies]
 walkdir = "2"
 time = "0.1"
-error-chain = "0.12"
 
 [dependencies.clap]
 features = ["suggestions", "color", "wrap_help"]
 version = "2"
+
+[dependencies.error-chain]
+version = "0.12"
+default-features = false
 
 [profile.release]
 opt-level = "s"

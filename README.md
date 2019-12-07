@@ -34,7 +34,7 @@ FLAGS:
     -V, --version      Prints version information
 
 OPTIONS:
-        --graveyard <graveyard>    Directory where deleted files go to rest
+    -g  --graveyard <graveyard>    Directory where deleted files go to rest
     -u, --unbury <target>       Undo the last removal by the current user, or specify some file(s) in the graveyard.  Combine with -s to restore everything printed by -s.
 
 ARGS:

@@ -96,8 +96,9 @@ Returned /tmp/graveyard-jack/home/jack/file1~1 to /home/jack/file1~1
 
 ## ⚰ Todo List
 
-- [ ] Add auto suggestions generate
+- [x] Add auto suggestions generate
 - [ ] Add protect files config
+- [ ] Add batched unbuary
 
 ## ⚰ Credits
 Special thanks to:

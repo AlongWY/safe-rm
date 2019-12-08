@@ -243,7 +243,7 @@ fn run() -> Result<()> {
             }
         }
     } else {
-        println!("{}\nsafe-rm -h for help", matches.usage());
+        println!("{}", matches.usage());
     }
 
     Ok(())
